@@ -7,6 +7,7 @@
 
             [ring.middleware.params]
             [ring.middleware.keyword-params]
+            [ring.middleware.session]
 
             [taoensso.sente :as sente]
             [taoensso.sente.server-adapters.immutant :refer [get-sch-adapter]]))
@@ -15,7 +16,8 @@
 
 (let [{:keys [ch-recv send-fn connected-uids
               ajax-post-fn ajax-get-or-ws-handshake-fn]}
-      (sente/make-channel-socket! (get-sch-adapter) {})]
+      (sente/make-channel-socket!
+       (get-sch-adapter))]
 
   (def ring-ajax-post                ajax-post-fn)
   (def ring-ajax-get-or-ws-handshake ajax-get-or-ws-handshake-fn)
@@ -24,24 +26,31 @@
   (def connected-uids                connected-uids) ; Watchable, read-only atom
 )
 
+(defn add-random-uid
+  [req]
+  (assoc-in req [:session :uid] (str (java.util.UUID/randomUUID))))
+
 (defroutes my-app-routes
   ;; <other stuff>
 
   ;;; Add these 2 entries: --->
-  (GET  "/chsk" req (ring-ajax-get-or-ws-handshake req))
-  (POST "/chsk" req (ring-ajax-post                req))
-  (route/resources "/"))
+  (GET  "/chsk" req (ring-ajax-get-or-ws-handshake (add-random-uid req)))
+  (POST "/chsk" req (ring-ajax-post (add-random-uid req)))
+  (route/resources "/")
+  (route/not-found "<h1>Resource not found</h1>"))
 
 (def my-app
   (-> my-app-routes
       ;; Add necessary Ring middleware:
       ring.middleware.keyword-params/wrap-keyword-params
-      ring.middleware.params/wrap-params))
+      ring.middleware.params/wrap-params
+      ring.middleware.session/wrap-session))
 
 (defn run
   []
-  (web/run my-app {:host "127.0.0.1" :path "/" :port "5000"}))
+  (web/run #'my-app {:host "127.0.0.1" :path "/" :port "5000"}))
 
+;; rethinkdb connection
 (def conn (r/connect :host "127.0.0.1" :port 28015 :db "test"))
 
 (defn setup []
@@ -55,6 +64,12 @@
        (r/table "authors")
        (r/changes {:include-initial true})
        (r/run conn))))
+
+(defn push-to-client
+  []
+  (photon.core/chsk-send!
+   :taoensso.sente/nil-uid
+   [:fast-push/could-be-anything (str "hello !!")]))
 
 (defonce author-atom (atom #{}))
 

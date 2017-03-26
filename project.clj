@@ -10,7 +10,10 @@
                  [compojure "1.5.2"]
                  [ring "1.5.0"]
 
-                 [org.immutant/web "2.1.6"]
+                 [org.immutant/web "2.1.6"
+                  :exclusions [[ch.qos.logback/logback-classic]
+                               [ch.qos.logback/logback-core]]]
+                 [org.slf4j/slf4j-log4j12 "1.7.21"] ;; move to dev.
                  [com.apa512/rethinkdb "0.15.26"]
                  [com.taoensso/sente "1.11.0"]
                  ]
