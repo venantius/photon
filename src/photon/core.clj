@@ -50,42 +50,8 @@
   []
   (web/run #'my-app {:host "127.0.0.1" :path "/" :port "5000"}))
 
-;; rethinkdb connection
-(def conn (r/connect :host "127.0.0.1" :port 28015 :db "test"))
-
-(defn setup []
-  (-> (r/db "test")
-      (r/table-create "authors")))
-
-(defn prn-author-updates
-  []
-  (doall
-   (-> (r/db "test")
-       (r/table "authors")
-       (r/changes {:include-initial true})
-       (r/run conn))))
-
 (defn push-to-client
   []
   (photon.core/chsk-send!
    :taoensso.sente/nil-uid
    [:fast-push/could-be-anything (str "hello !!")]))
-
-(defonce author-atom (atom #{}))
-
-(defn watch-author-changes
-  []
-  (reset! author-atom (set (-> (r/db "test") (r/table "authors") (r/run conn))))
-  (doall
-   (map
-    (fn [v]
-      (let [{:keys [old_val new_val]} v]
-        (if old_val
-          (swap! author-atom (fn [a] (-> a
-                                         (disj old_val)
-                                         (conj new_val))))
-          (swap! author-atom #(conj % new_val)))))
-    (-> (r/db "test")
-        (r/table "authors")
-        (r/changes)
-        (r/run conn)))))
