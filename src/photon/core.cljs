@@ -6,6 +6,9 @@
    [clojure.string  :as str]
 
    [cljs.core.async :as async :refer (<! >! put! chan)]
+
+   [photon.config :as config]
+
    [taoensso.encore :as encore :refer-macros (have have?)]
 
    [taoensso.sente  :as sente :refer (cb-success?)] ; <--- Add this
@@ -13,7 +16,7 @@
 
 ;;; Add this: --->
 (let [{:keys [chsk ch-recv send-fn state]}
-      (sente/make-channel-socket! "/chsk" ; Note the same path as before
+      (sente/make-channel-socket! config/photon-endpoint ; Note the same path as before
        {:type :auto ; e/o #{:auto :ajax :ws}
        })]
   (def chsk       chsk)
@@ -30,6 +33,21 @@
   (when-let [stop-f @router]
     (stop-f)))
 
+(defmulti recv-event-handler
+  "Multimethod to handle the `?data` from `:chsk/recv` messages."
+  (fn [x] (first x)) ; dispatch on the event key
+  )
+
+(defmethod recv-event-handler
+  :default
+  [data]
+  (println "Called!")
+  (println data))
+
+(defmethod recv-event-handler
+  :photon.server.db/change
+  [data]
+  (println "DB CHANGE!!"))
 
 (defmulti -event-msg-handler
   "Multimethod to handle Sente `event-msg`s"
@@ -55,13 +73,13 @@
 
 (defmethod -event-msg-handler :chsk/recv
   [{:as ev-msg :keys [?data]}]
-  (println "Push event from server: %s" ?data))
+  (recv-event-handler ?data)
+  (println "Push event from server: " ?data))
 
 (defmethod -event-msg-handler :chsk/handshake
   [{:as ev-msg :keys [?data]}]
   (let [[?uid ?csrf-token ?handshake-data] ?data]
-    (println "Handshake: %s" ?data)
-    (println ev-msg)))
+    (println "Handshake: " ?data)))
 
 (defn start-router! []
   (stop-router!)
