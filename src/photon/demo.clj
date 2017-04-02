@@ -3,7 +3,7 @@
             [compojure.route :as route]
             [immutant.web :as web]
             [photon.core :as photon]
-            [photon.server :as server]
+            [photon.server.routes :as photon-routes]
             [ring.middleware.params]
             [ring.middleware.keyword-params]
             [ring.middleware.session]))
@@ -12,7 +12,7 @@
   ;; <other stuff>
 
   ;;; Add these 2 entries: --->
-  photon/photon-routes
+  photon-routes/photon-routes
   (route/resources "/")
   (route/not-found "<h1>Resource not found</h1>"))
 

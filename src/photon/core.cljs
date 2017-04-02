@@ -8,11 +8,14 @@
    [cljs.core.async :as async :refer (<! >! put! chan)]
 
    [photon.config :as config]
+   [photon.messages :as messages]
 
    [taoensso.encore :as encore :refer-macros (have have?)]
 
    [taoensso.sente  :as sente :refer (cb-success?)] ; <--- Add this
   ))
+
+(enable-console-print!)
 
 ;;; Add this: --->
 (let [{:keys [chsk ch-recv send-fn state]}
@@ -33,9 +36,18 @@
   (when-let [stop-f @router]
     (stop-f)))
 
+;; Subscribe to a change feed on the server.
+(defn subscribe
+  "Subscribe to a changefeed on the Photon server."
+  [changefeed-name local-atom]
+  (chsk-send! [messages/subscribe {:name :feed}]
+              8000
+              )
+  )
+
 (defmulti recv-event-handler
   "Multimethod to handle the `?data` from `:chsk/recv` messages."
-  (fn [x] (first x)) ; dispatch on the event key
+  first
   )
 
 (defmethod recv-event-handler

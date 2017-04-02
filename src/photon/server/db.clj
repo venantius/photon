@@ -1,55 +1,98 @@
 (ns photon.server.db
-  (:require
-   [photon.core :as photon]
-   [rethinkdb.query :as r]))
+  (:require [clojure.core.async :as async]
+            [photon.server :as server]
+            [rethinkdb.query :as r]))
+
+(defonce _config (atom nil))
+
+(defonce subscribers (atom {}))
+
+(defonce change-registry (atom {}))
+
+(defn- add-uid
+  "Given x, which will either be a set or nil, either add x to the set or return
+  a new set with x as its element."
+  [x uid]
+  (if (nil? x)
+    #{uid}
+    (conj x uid)))
+
+(defn subscribe!
+  "Subscribe a specific user to a changefeed."
+  [feed uid]
+  ;; first, check to see if that changefeed is defined. if not, throw an error.
+
+  ;; second, see if this server is currently listening to that changefeed.
+  ;; if not, start listening
+
+  ;; finally, update the subscribers atom to include the UID.
+  (swap! subscribers update feed add-uid uid))
 
 ;; rethinkdb connection
 (def conn (r/connect :host "127.0.0.1" :port 28015 :db "test"))
 
-;; most of this stuff is only for development. Maybe it should go in test?
-;; Create our tables.
-(defn setup []
-  (-> (r/db "test")
-      (r/table-create "authors")))
+(defn configure!
+  "Set the default connection configuration. Does not actually open a database
+  connection."
+  ([] (configure! {}))
+  ([{:keys [host port db] :or {host "127.0.0.1" port 28015 db "test"} :as opts}]
+   (when (nil? @_config)
+     (reset! _config {:host host :port port :db db}))))
 
-;; A working changefeed
-(defn prn-author-updates
-  []
-  (doall
-   (-> (r/db "test")
-       (r/table "authors")
-       (r/changes {:include-initial true})
-       (r/run conn))))
+;; NOTE: Is this a pattern we actually want to follow on the server? Maybe it
+;; is in a debug mode but otherwise it just seems memory-heavy. We should
+;; push this stuff to the client.
+(defn update-atom!
+  "Update the atom a containing a set of values."
+  [a {:keys [old_val new_val] :as v}]
+  (if old_val
+        ;; update
+    (swap! a (fn [x] (-> x
+                         (disj old_val)
+                         (conj new_val))))
+        ;; create
+    (swap! a #(conj % new_val)))
+  ;; todo: broadcast to conected clients.
+)
 
-(defonce author-atom (atom #{}))
-
-(defn watch-changefeed
+(defn start-async-changefeed
   "Given an atom and a query, store the initial results of the query in the atom
   and then wait for any changes and also store them in the atom."
-  [a q]
+  [a q conn]
   (reset! a (set (r/run q conn)))
-  (doall
-   (map
-     ;; TODO -- handle deletions!
-     ;; TODO -- make this non-blocking, move it to a core async channel.
-    (fn [{:keys [old_val new_val] :as v}]
-      (if old_val
-        ;; update
-        (swap! a (fn [x] (-> x
-                             (disj old_val)
-                             (conj new_val))))
-        ;; create
-        (swap! author-atom #(conj % new_val)))
-      ;; Now, let's broadcast to any connected clients!
-      (doall
-       (map
-        #(photon/chsk-send! % [:photon.server.db/change v])
-        (:any @photon/connected-uids))))
-    (-> q
-        (r/changes)
-        (r/run conn)))))
+  (let [chan (-> q
+                 (r/changes)
+                 (r/run conn {:async? true}))]
+    (async/go-loop []
+      (when-let [msg (async/<! chan)]
+        (update-atom! a msg)
+        (println msg)
+        (recur)))))
 
-(defn watch-authors
-  []
-  (watch-changefeed author-atom
-                    (r/table "authors")))
+(defprotocol IChangeFeed
+  (active? [this])
+  (start [this])
+  (stop [this]))
+
+(defrecord PhotonChangeFeed [query ^clojure.lang.Atom conn]
+  IChangeFeed
+  (active? [this] (:active? @conn))
+  (start [this]
+    (if (nil? @_config)
+      (throw (ex-info "RethinkDB server connection is not configured." {}))
+      (let [{:keys [host port db]} @_config
+            connection (r/connect :host host :port port :db db)]
+        (reset! conn {:active? true
+                      :connection connection})
+        (start-async-changefeed (atom nil) query connection))))
+  (stop [this]
+    (.close (:connection @conn))
+    (reset! conn {:active? false})))
+
+(defn defchange
+  [changename query]
+  (if (nil? (namespace changename))
+    (throw (Exception. "changename must be namespace-qualified."))
+    (let [feed (map->PhotonChangeFeed {:query query
+                                       :conn (atom {:active? false})})]
+      (swap! change-registry assoc changename feed))))

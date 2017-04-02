@@ -1,8 +1,10 @@
 (ns photon.server)
 
-(def state
+(defonce state
   (atom
-   {:ajax-post-fn nil
+   {:initialized? false
+
+    :ajax-post-fn nil
     :ajax-get-or-ws-handshake-fn nil
 
     ; ChannelSocket's receive channel -- "ch-chsk"

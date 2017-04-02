@@ -20,6 +20,8 @@
   
   :plugins [[lein-figwheel "0.5.9"]]
 
+  :profiles {:dev {:dependencies [[binaryage/devtools "0.9.2"]]}}
+
   :clean-targets  [:target-path "out"]
   :cljsbuild {
     :builds [{:id "dev"
@@ -28,5 +30,7 @@
               :compiler {:main "photon.core"
                          :output-to "resources/public/js/main.js"
                          :output-dir "resources/public/js/photon/out"
+                         :external-config {:devtools/config {:features-to-install :all}}
+                         :preloads [devtools.preload]
                          :asset-path "/js/photon/out"}}]}
   )
