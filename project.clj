@@ -20,7 +20,8 @@
   
   :plugins [[lein-figwheel "0.5.9"]]
 
-  :profiles {:dev {:dependencies [[binaryage/devtools "0.9.2"]]}}
+  :profiles {:dev {:dependencies [[binaryage/devtools "0.9.2"]
+                                  [circleci/bond "0.2.9"]]}}
 
   :clean-targets  [:target-path "out"]
   :cljsbuild {
